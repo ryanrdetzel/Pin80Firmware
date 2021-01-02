@@ -8,7 +8,6 @@
 #define ORANGE 0x100400
 #define WHITE  0x101010
 
-const int ledsPerStrip = 24;
 
 DMAMEM int displayMemory[ledsPerStrip*6];
 int drawingMemory[ledsPerStrip*6];
@@ -19,7 +18,6 @@ OctoWS2811 leds(ledsPerStrip, displayMemory, drawingMemory, config);
 
 void initLeds(){
   leds.begin();
-  //leds.show();
   
   for (int i=0; i < leds.numPixels(); i++) {
     leds.setPixel(i, WHITE);

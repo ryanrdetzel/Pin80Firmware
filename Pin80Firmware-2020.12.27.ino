@@ -1,4 +1,6 @@
 
+#include <Arduino.h>
+
 #define RED    0x160000
 #define GREEN  0x001600
 #define BLUE   0x000016
@@ -7,9 +9,17 @@
 #define ORANGE 0x100400
 #define WHITE  0x101010
 
+// This matters for port calculation
+// P0 is the first 48, P1 is the second, etc.
+
+const int ledsPerStrip = 24;
+
 int led = 13;
 
-int ports[4] = {9,10,11,2};
+const int strip1 = 2;
+const int strip2 = 14;
+
+int ports[5] = {9, 10, 11, strip1, strip2};
 String cmd;
 
 void setup() {
@@ -30,6 +40,26 @@ void setup() {
 
 bool updatingPixels = false;
 
+int getFirstPixel(int port){
+  int pin = ports[port];
+  switch(pin){
+    case strip1: return 0;
+    case strip2: return ledsPerStrip;
+  }
+
+  return 0;
+}
+
+int lastPixel(int port){
+  int pin = ports[port];
+  switch(pin){
+    case strip1: return ledsPerStrip - 1;
+    case strip2: return (ledsPerStrip * 2) - 1;
+  }
+
+  return ledsPerStrip - 1;
+}
+
 void loop() {
   while(Serial.available()) {
     /* Reads one command over serial */
@@ -37,80 +67,111 @@ void loop() {
 
     // Direct port
     if (cmd.toUpperCase().startsWith("P")) {
+      if (cmd.equals("PXEND")){
+        updateAllPixels();
+        updatingPixels = false;
+        Serial.println("Pixel end");
+        continue;
+      }
+      else if (cmd.equals("PXSTART")){
+        updatingPixels = true;
+        Serial.println("Pixel start");
+        continue;
+      }
+
+      /* Extract the port information from the request */
       int firstSpace = cmd.indexOf(' ');
       int portNumber = cmd.substring(1, firstSpace).toInt();
       String action = cmd.substring(firstSpace + 1).toUpperCase();
 
-      // Check if it's within range?
-      Serial.print("Received: ");
-      Serial.print(portNumber);
-      Serial.println(action);
-
       int pinNumber = ports[portNumber];
+      
+      
+      // Check if it's within range?
+      Serial.print("Port: ");   Serial.print(portNumber);
+      Serial.print("   Pin: "); Serial.print(pinNumber);
+      Serial.print("  ");       Serial.println(action);
 
     /*
-      P4 PXSTART
-      P4 PX23 001600
-      P4 PX1,2,3,4 160000
-      P4 PX6-16 160000
-      P4 PXEND
+      PXSTART
+      P4 PX0 001600
+      P4 PX1,3,5 160000
+      P4 PX0-6 160000
+      PXEND
+
+      PXSTART\nP4 PX0 001600\nPXEND\n
+      
+      P0 ON
+      P0 OFF
      */
       if (action.startsWith("PX")){
-        if (action.equals("PXEND")){
-          updateAllPixels();
-          updatingPixels = false;
-        }
-        else if (action.equals("PXSTART")){
-          updatingPixels = true;
-        }
-        else if (updatingPixels){ 
-          // Validate the port for pixels is the same.
-          // split action to led number, color.
+        // Validate the port for pixels is the same.
+        // split action to led number, color.
 
-          firstSpace = action.indexOf(' ');
-          String ledInfo = action.substring(2, firstSpace);
-          String colorInfo = action.substring(firstSpace + 1);
+        if (!updatingPixels) continue;
 
-          int pixels[64]; // Update max 64 pixels
-          int commaLocation = ledInfo.indexOf(',');
-          int dashLocation = ledInfo.indexOf('-');
-          
-          int ledNumber;
-          int pixelCount = 0;
-          
-          // Check if it's a list or range of leds
-          if (commaLocation > 0){
-            while(commaLocation > 0){
-              ledNumber = ledInfo.substring(0, commaLocation).toInt();
-              pixels[pixelCount++] = ledNumber;
-              ledInfo = ledInfo.substring(commaLocation + 1);
-              commaLocation = ledInfo.indexOf(',');
-            }
-            // grab the last of multiple of the only if it's a single
-            ledNumber = ledInfo.substring(0).toInt();
-            pixels[pixelCount++] = ledNumber;
-          }else if (dashLocation > 0){
-            ledNumber = ledInfo.substring(0, dashLocation).toInt();
-            ledInfo = ledInfo.substring(dashLocation + 1);
-            int endRangeNumber = ledInfo.substring(0).toInt();
-            pixelCount = endRangeNumber - ledNumber + 1; // inclusive
-            
-            for (int x = 0; x<pixelCount; x++){
-              pixels[x] = ledNumber++;
-            }
-          } else { //Single value
-            ledNumber = ledInfo.substring(0).toInt();
-            pixels[pixelCount++] = ledNumber;
+        // Get the actual pixel start for the strip
+        int firstPixel = getFirstPixel(portNumber);
+        Serial.print("  firstPixel: "); Serial.println(firstPixel);
+
+        firstSpace = action.indexOf(' ');
+        String ledInfo = action.substring(2, firstSpace);
+        String colorInfo = action.substring(firstSpace + 1);
+
+        int pixels[64]; // Update max 64 pixels
+        int commaLocation = ledInfo.indexOf(',');
+        int dashLocation = ledInfo.indexOf('-');
+        
+        int ledNumber;
+        int pixelCount = 0;
+        
+        // Check if it's a list or range of leds
+
+
+        if (commaLocation > 0)
+        {
+          /* List */
+          while(commaLocation > 0){
+            ledNumber = ledInfo.substring(0, commaLocation).toInt();
+            pixels[pixelCount++] = firstPixel + ledNumber;
+            ledInfo = ledInfo.substring(commaLocation + 1);
+            commaLocation = ledInfo.indexOf(',');
           }
+          // grab the last of multiple of the only if it's a single
+          ledNumber = ledInfo.substring(0).toInt();
+          pixels[pixelCount++] = firstPixel + ledNumber;
+        }
+        else if (dashLocation > 0)
+        {
+          /* Range */
+          ledNumber = ledInfo.substring(0, dashLocation).toInt();
+          ledInfo = ledInfo.substring(dashLocation + 1);
+          int endRangeNumber = ledInfo.substring(0).toInt();
+          pixelCount = endRangeNumber - ledNumber + 1; // inclusive
 
-          char buf[7];
-          colorInfo.toCharArray(buf, 7);
-          int colorValue = x2i(buf);
-          for (int x=0;x<pixelCount;x++){
-            setPixel(pixels[x], colorValue);
+          int pixelNum = firstPixel + ledNumber;
+          for (int x = 0; x<pixelCount; x++){
+            pixels[x] = pixelNum++;
           }
         }
-        return;
+        else 
+        { 
+          //Single value
+          ledNumber = ledInfo.substring(0).toInt();
+          // Get the actual pixel start for the strip
+        
+          pixels[pixelCount++] = firstPixel + ledNumber;
+        }
+
+        char buf[7];
+        colorInfo.toCharArray(buf, 7);
+        int colorValue = x2i(buf);
+        for (int x=0;x<pixelCount;x++){
+          setPixel(pixels[x], colorValue);
+          Serial.print(pixels[x]);
+          Serial.print("=");
+          Serial.println(colorValue);
+        }
       }
       else if (action.equals("ON")){
         digitalWrite(pinNumber, LOW);
