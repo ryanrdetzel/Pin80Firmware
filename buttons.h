@@ -1,0 +1,3 @@
+
+void setupButtons();
+void checkInput();

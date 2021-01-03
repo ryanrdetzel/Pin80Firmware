@@ -1,66 +1,35 @@
-
 #include <Arduino.h>
 
-#define RED    0x160000
-#define GREEN  0x001600
-#define BLUE   0x000016
-#define YELLOW 0x101400
-#define PINK   0x120009
-#define ORANGE 0x100400
-#define WHITE  0x101010
+#include "pixels.h"
+#include "utils.h"
+#include "ports.h"
+#include "buttons.h"
+#include "outputs.h"
 
-// This matters for port calculation
-// P0 is the first 48, P1 is the second, etc.
+/* Variables used */
+bool updatingPixels = false;
 
-const int ledsPerStrip = 24;
-
-int led = 13;
-
-const int strip1 = 2;
-const int strip2 = 14;
-
-int ports[5] = {9, 10, 11, strip1, strip2};
 String cmd;
 
 void setup() {
   Serial.begin(115200);
-  
-  pinMode(led, OUTPUT);
-  pinMode(9, OUTPUT);
-  pinMode(10, OUTPUT);
-  pinMode(11, OUTPUT);
 
-  digitalWrite(led, HIGH);
-  digitalWrite(9, HIGH);
-  digitalWrite(10, HIGH);
-  digitalWrite(11, HIGH);
+  setupButtons();
 
+  /* Setup the outputs */
+  setupOutputs();
+
+  /* Setup pixel strips */
   initLeds();
 }
 
-bool updatingPixels = false;
-
-int getFirstPixel(int port){
-  int pin = ports[port];
-  switch(pin){
-    case strip1: return 0;
-    case strip2: return ledsPerStrip;
-  }
-
-  return 0;
-}
-
-int lastPixel(int port){
-  int pin = ports[port];
-  switch(pin){
-    case strip1: return ledsPerStrip - 1;
-    case strip2: return (ledsPerStrip * 2) - 1;
-  }
-
-  return ledsPerStrip - 1;
-}
-
 void loop() {
+  checkInput();
+  readSerialInput();
+
+}
+
+void readSerialInput(){
   while(Serial.available()) {
     /* Reads one command over serial */
     cmd = Serial.readStringUntil('\n').trim();
@@ -85,7 +54,6 @@ void loop() {
       String action = cmd.substring(firstSpace + 1).toUpperCase();
 
       int pinNumber = ports[portNumber];
-      
       
       // Check if it's within range?
       Serial.print("Port: ");   Serial.print(portNumber);
@@ -174,31 +142,12 @@ void loop() {
         }
       }
       else if (action.equals("ON")){
-        digitalWrite(pinNumber, LOW);
-      } else if (action.equals("OFF")){
         digitalWrite(pinNumber, HIGH);
+      } else if (action.equals("OFF")){
+        digitalWrite(pinNumber, LOW);
       } else {
          Serial.println("Unknown command");
       }
     }
   }
-}
-
-// Convert hex string to int value
-int x2i(char *s){
- int x = 0;
- for(;;) {
-   char c = *s;
-   if (c >= '0' && c <= '9') {
-      x *= 16;
-      x += c - '0';
-   }
-   else if (c >= 'A' && c <= 'F') {
-      x *= 16;
-      x += (c - 'A') + 10;
-   }
-   else break;
-   s++;
- }
- return x;
 }
