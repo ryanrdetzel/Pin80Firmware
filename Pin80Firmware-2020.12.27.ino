@@ -26,7 +26,6 @@ void setup() {
 void loop() {
   checkInput();
   readSerialInput();
-
 }
 
 void readSerialInput(){
